@@ -5,6 +5,9 @@ import json
 import os
 import time
 from datetime import datetime
+from bit import Key, PrivateKey
+from bit.format import bytes_to_wif
+from bit.base58 import b58decode_check
 
 class Block:
     def __init__(self, index, timestamp, data, previous_hash):
@@ -77,9 +80,45 @@ class Mining:
         return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
     @staticmethod
-    def start(user_wallet):
+    def validate_base58(address):
+        try:
+            b58decode_check(address)
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def send_to_wallet(private_key, recipient_address, amount):
+        if not Mining.validate_base58(private_key):
+            print(f"Invalid private key: {private_key}")
+            return None
+        if not Mining.validate_base58(recipient_address):
+            print(f"Invalid wallet address: {recipient_address}")
+            return None
+        
+        try:
+            key = Key(private_key)
+            tx_hash = key.send([(recipient_address, amount, 'btc')])
+            return tx_hash
+        except Exception as e:
+            print(f"Error in sending transaction: {e}")
+            return None
+
+    @staticmethod
+    def start(user_wallet, private_key):
+        if not Mining.validate_base58(private_key):
+            print("Invalid private key format.")
+            return
+        if not Mining.validate_base58(user_wallet):
+            print("Invalid wallet address format.")
+            return
+        
         previous_block_hash = '0000000000000000000000000000000000000000000000000000000000000000'
         target = 'mining/mining.txt'
+        
+        if not os.path.exists(target):
+            open(target, 'w').close()  # Create the file if it does not exist
+        
         with open(target, 'r') as file:
             hashes = file.readlines()
 
@@ -97,13 +136,22 @@ class Mining:
 
             print(f"Hash Received! Nonce: {nonce}, Block Hash: {block_hash}")
 
+            # Kirim hasil penambangan ke dompet
+            tx_hash = Mining.send_to_wallet(private_key, user_wallet, transaction['amount'])
+            if tx_hash:
+                print(f"Transaksi dikirim dengan hash: {tx_hash}")
+            else:
+                print("Transaksi gagal dikirim.")
+
 if __name__ == '__main__':
-    wallet = input("your wallet : ")
-    Mining.start(wallet)
+    wallet = input("WALLET ADDRESS: ")
+    private_key = input("PRIVATE KEY: ")
+    Mining.start(wallet, private_key)
     try:
         os.mkdir('mining')
-    except:
+    except FileExistsError:
         pass
+
     blockchain = Blockchain()
     t = 5000
     for i in range(int(t)):
@@ -115,9 +163,4 @@ if __name__ == '__main__':
             print("Timestamp:", block.timestamp)
             print("Previous Hash:", block.previous_hash)
             print("Block Hash:", block.hash_block())
-            target = 'mining/mining'
-            file = open((target) + ".txt", "a")
-            file.write(str(block.hash_block()))
-            file.write("\n")
-            file.close
             print()
